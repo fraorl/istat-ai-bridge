@@ -6,3 +6,5 @@ python-dotenv>=1.0.1
 
 # Gestione delle richieste HTTP per connettersi alle API dell'ISTAT
 requests>=2.31.0
+
+certifi
