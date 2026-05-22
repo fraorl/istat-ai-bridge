@@ -1,0 +1,8 @@
+# SDK Ufficiale di Anthropic per interagire con Claude
+anthropic>=0.45.0
+
+# Gestione sicura delle chiavi API tramite file .env
+python-dotenv>=1.0.1
+
+# Gestione delle richieste HTTP per connettersi alle API dell'ISTAT
+requests>=2.31.0
