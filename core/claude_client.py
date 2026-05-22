@@ -33,10 +33,14 @@ def ask_analyst(context: str, question: str) -> str:
         raise
 
 
+MAX_DATASETS_TO_CLAUDE = 1000
+
+
 def ask_dataset_filter(datasets: list[dict], message: str) -> dict:
     client = Anthropic()
-    catalog_text = "\n".join(f"{d['id']}: {d['name_it']}" for d in datasets)
-    _log.info("ask_dataset_filter | message=%r | datasets=%d", message, len(datasets))
+    capped = datasets[:MAX_DATASETS_TO_CLAUDE]
+    catalog_text = "\n".join(f"{d['id']}: {d['name_it']}" for d in capped)
+    _log.info("ask_dataset_filter | message=%r | datasets=%d (capped at %d)", message, len(datasets), len(capped))
     try:
         response = client.messages.create(
             model=MODEL,

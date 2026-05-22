@@ -1,34 +1,70 @@
 # References & Fonti Dati
 
-Questo documento raccoglie i riferimenti tecnici, le fonti dei dati istituzionali e le specifiche delle API utilizzate per lo sviluppo di questo bridge tra ISTAT e Anthropic Claude.
+Riferimenti tecnici, fonti istituzionali e specifiche delle API utilizzate nel progetto.
 
 ---
 
-## 1. Fonti Dati ISTAT (Sito Ufficiale e API)
+## 1. API ISTAT — SDMX REST
 
-L'applicazione interroga i dati ufficiali rilasciati dall'Istituto Nazionale di Statistica (ISTAT) attraverso i canali di interoperabilità standard.
+L'applicazione interroga l'API ufficiale ISTAT tramite lo standard **SDMX 2.1** (Statistical Data and Metadata Exchange).
 
-*   **Hub della Statistica (Nuova API REST):** [https://sdmx.istat.it](https://sdmx.istat.it)
-    *   L'endpoint utilizzato sfrutta lo standard internazionale **SDMX** (Statistical Data and Metadata Exchange).
-*   **Specifiche del Formato JSON-stat:** [https://json-stat.org](https://json-stat.org)
-    *   Il loader effettua il parsing dell'header HTTP `application/vnd.sdmx.data+json` per elaborare le risposte in modo leggero e strutturato.
-*   **Dataset di Riferimento per i test:** 
-    *   *Indice dei prezzi al consumo per l'intera collettività nazionale (NIC)* - Classificazione COICOP.
+- **Portale dati ISTAT:** https://esploradati.istat.it
+- **Base URL API:** `https://esploradati.istat.it/SDMXWS/rest/`
+
+### Endpoint utilizzati
+
+| Endpoint | Descrizione |
+|---|---|
+| `GET /dataflow/IT1` | Catalogo completo di tutti i dataset disponibili |
+| `GET /dataflow/IT1/{id}/{version}` | Metadati strutturali di un singolo dataset |
+| `GET /data/IT1,{id},{version}/` | Osservazioni reali (serie temporali) di un dataset |
+
+### Formato delle risposte
+
+- **Metadati:** `application/vnd.sdmx.structure+xml;version=2.1`
+- **Dati:** `application/vnd.sdmx.genericdata+xml;version=2.1`
+
+### Dataset di riferimento per i test
+
+- ID `169_745` — FOI (Indice dei prezzi al consumo per famiglie di operai e impiegati), mensili dal 2016 (base 2015)
 
 ---
 
-## 2. Documentazione Tecnica AI & LLM
+## 2. Anthropic Claude API
 
-L'integrazione con i modelli di linguaggio e la gestione della sicurezza dei prompt seguono le linee guida ufficiali fornite dai provider tecnologici.
+- **SDK Python:** https://github.com/anthropics/anthropic-sdk-python
+- **Documentazione API:** https://docs.anthropic.com/
+- **Rate limits:** https://docs.anthropic.com/en/api/rate-limits
 
-*   **Anthropic Python SDK:** [https://github.com/anthropics/anthropic-sdk-python](https://github.com/anthropics/anthropic-sdk-python)
-    *   Utilizzato per l'integrazione nativa con il modello `claude-3-5-sonnet-latest`.
-*   **Anthropic System Prompts Guide:** [https://docs.anthropic.com/claude/docs/system-prompts](https://docs.anthropic.com/claude/docs/system-prompts)
-    *   Riferimento metodologico per l'isolamento del contesto dei dati e la prevenzione del rischio di *Prompt Injection* tramite il parametro nativo `system`.
+### Modello utilizzato
+
+`claude-haiku-4-5-20251001` — scelto per velocità e costo contenuto nelle query sul catalogo.
+
+### Funzioni implementate
+
+| Funzione | Modulo | Descrizione |
+|---|---|---|
+| `ask_analyst` | `core/claude_client.py` | Analisi dati ISTAT con system prompt da analista economico |
+| `ask_dataset_filter` | `core/claude_client.py` | Filtraggio del catalogo tramite linguaggio naturale (max 1000 dataset) |
 
 ---
 
-## 3. Standard di Sviluppo e Community Italiane
+## 3. Stack tecnologico
 
-*   **Linee Guida Nazionali per l'Interoperabilità dei Dati (AgID):** Riferimento ideale per i progetti inseriti nel catalogo dell'ecosistema open source italiano.
-*   **Developers Italia:** [https://developers.italia.it](https://developers.italia.it) per le linee guida di riuso del software e la pubblicazione nelle community della Pubblica Amministrazione.
+### Backend
+- **FastAPI** https://fastapi.tiangolo.com — server REST con CORS e gestione errori HTTP
+- **Uvicorn** https://www.uvicorn.org — ASGI server per FastAPI
+- **requests** https://requests.readthedocs.io — chiamate HTTP verso l'API ISTAT
+- **certifi** https://pypi.org/project/certifi/ — bundle certificati SSL
+
+### Frontend
+- **Vite + React** https://vitejs.dev — scaffolding e dev server con proxy verso il backend
+- **React Router** https://reactrouter.com — routing lato client
+
+---
+
+## 4. Standard e riferimenti normativi
+
+- **Specifiche SDMX 2.1:** https://sdmx.org/resources/sdmx-technical-standards/
+- **Linee Guida Nazionali per l'Interoperabilità (AgID):** riferimento per progetti nell'ecosistema open data italiano
+- **Developers Italia:** https://developers.italia.it

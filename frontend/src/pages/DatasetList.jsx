@@ -14,50 +14,77 @@ function hasRegion(name) {
   return REGIONS.some(r => new RegExp(`\\b${r}\\b`).test(lower))
 }
 
+const YEAR_RE = /\b(19|20)\d{2}\b/g
+
+function baseName(name) {
+  return name
+    .replace(YEAR_RE, '')
+    .replace(/\s*[-–—]\s*$/, '')
+    .replace(/\(\s*\)/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+}
+
+function groupDatasets(datasets) {
+  const map = new Map()
+  for (const d of datasets) {
+    const years = [...d.name_it.matchAll(YEAR_RE)].map(m => m[0])
+    const key   = years.length > 0 ? baseName(d.name_it) : d.name_it
+
+    if (!map.has(key)) {
+      map.set(key, { key, name_it: key, name_en: baseName(d.name_en || ''), items: [] })
+    }
+    map.get(key).items.push({ ...d, _years: years })
+  }
+
+  return Array.from(map.values()).map(g => ({
+    ...g,
+    years: [...new Set(g.items.flatMap(d => d._years))].sort(),
+    description_it: g.items[0].description_it,
+  }))
+}
+
 export default function DatasetList() {
-  const [datasets, setDatasets]     = useState([])
-  const [categories, setCategories] = useState([])
-  const [loading, setLoading]       = useState(true)
-  const [error, setError]           = useState(null)
-  const [search, setSearch]         = useState('')
+  const [datasets, setDatasets]         = useState([])
+  const [loading, setLoading]           = useState(true)
+  const [error, setError]               = useState(null)
+  const [search, setSearch]             = useState('')
   const [filteredIds, setFilteredIds]   = useState(null)
   const [regionFilter, setRegionFilter] = useState('all')
-  const [categoryFilter, setCategoryFilter] = useState('all')
 
   useEffect(() => {
-    Promise.all([
-      fetch('/api/datasets').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() }),
-      fetch('/api/categories').then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() }),
-    ])
-      .then(([ds, cats]) => {
-        setDatasets(ds)
-        setCategories(cats)
-        setLoading(false)
-      })
+    fetch('/api/datasets')
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json() })
+      .then(data => { setDatasets(data); setLoading(false) })
       .catch(e => { setError(e.message); setLoading(false) })
   }, [])
 
-  const visible = datasets.filter(d => {
+  // filtra i dataset singoli, poi raggruppa il risultato
+  const filtered = datasets.filter(d => {
     const matchSearch =
       d.name_it.toLowerCase().includes(search.toLowerCase()) ||
       d.id.toLowerCase().includes(search.toLowerCase())
-    const matchFilter   = filteredIds === null || filteredIds.includes(d.id)
-    const matchRegion   =
+    const matchFilter = filteredIds === null || filteredIds.includes(d.id)
+    const matchRegion =
       regionFilter === 'all' ||
       (regionFilter === 'with'    && hasRegion(d.name_it)) ||
       (regionFilter === 'without' && !hasRegion(d.name_it))
-    const matchCategory =
-      categoryFilter === 'all' || d.category_id === categoryFilter
-
-    return matchSearch && matchFilter && matchRegion && matchCategory
+    return matchSearch && matchFilter && matchRegion
   })
+
+  const groups = groupDatasets(filtered)
+
+  const isHighlighted = g =>
+    filteredIds && g.items.some(d => filteredIds.includes(d.id))
 
   return (
     <div className="dataset-page">
       <div className="page-header">
         <h1>Elenco Dataset ISTAT</h1>
         <p className="subtitle">
-          {datasets.length > 0 ? `${visible.length} di ${datasets.length} dataset` : ''}
+          {datasets.length > 0
+            ? `${groups.length} gruppi · ${filtered.length} di ${datasets.length} dataset`
+            : ''}
         </p>
       </div>
 
@@ -70,20 +97,6 @@ export default function DatasetList() {
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
-
-          <div className="filter-bar">
-            <span className="filter-label">Categoria:</span>
-            <select
-              className="category-select"
-              value={categoryFilter}
-              onChange={e => setCategoryFilter(e.target.value)}
-            >
-              <option value="all">Tutte le categorie</option>
-              {categories.map(c => (
-                <option key={c.id} value={c.id}>{c.name_it}</option>
-              ))}
-            </select>
-          </div>
 
           <div className="filter-bar">
             <span className="filter-label">Regioni:</span>
@@ -103,29 +116,33 @@ export default function DatasetList() {
           </div>
 
           {loading && <div className="state-msg">Caricamento in corso...</div>}
-          {error && <div className="state-msg error">Errore: {error}</div>}
+          {error   && <div className="state-msg error">Errore: {error}</div>}
 
           {!loading && !error && (
             <div className="dataset-list">
-              {visible.length === 0
+              {groups.length === 0
                 ? <div className="state-msg">Nessun risultato trovato.</div>
-                : visible.map(d => (
+                : groups.map(g => (
                   <div
-                    key={d.id}
-                    className={`dataset-card${filteredIds && filteredIds.includes(d.id) ? ' highlighted' : ''}`}
+                    key={g.key}
+                    className={`dataset-card${isHighlighted(g) ? ' highlighted' : ''}`}
                   >
-                    <div className="dataset-name">{d.name_it}</div>
-                    {d.name_en && d.name_en !== d.name_it && (
-                      <div className="dataset-name-en">{d.name_en}</div>
+                    <div className="dataset-name">{g.name_it}</div>
+                    {g.name_en && g.name_en !== g.name_it && (
+                      <div className="dataset-name-en">{g.name_en}</div>
                     )}
-                    {d.description_it && (
-                      <div className="dataset-desc">{d.description_it}</div>
+                    {g.description_it && (
+                      <div className="dataset-desc">{g.description_it}</div>
                     )}
                     <div className="dataset-meta">
-                      <span className="badge">{d.id}</span>
-                      <span className="badge secondary">v{d.version}</span>
-                      {d.category_id && (
-                        <span className="badge category">{d.category_id}</span>
+                      {g.years.length > 0
+                        ? g.years.map(y => (
+                          <span key={y} className="badge year">{y}</span>
+                        ))
+                        : <span className="badge">{g.items[0].id}</span>
+                      }
+                      {g.items.length > 1 && (
+                        <span className="badge secondary">{g.items.length} dataset</span>
                       )}
                     </div>
                   </div>
