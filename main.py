@@ -1,6 +1,8 @@
 import certifi
 import requests
 import xml.etree.ElementTree as ET
+from datetime import datetime
+from pathlib import Path
 from dotenv import load_dotenv
 from anthropic import Anthropic
 
@@ -11,6 +13,7 @@ class IstatAILoader:
     """Carica metadati reali dall'API ISTAT SDMX e li trasforma per Claude."""
 
     def __init__(self, dataflow_id: str, agency: str = "IT1", version: str = "latest"):
+        self.dataflow_id = dataflow_id
         self.base_url = (
             "https://esploradati.istat.it/SDMXWS/rest/"
             f"dataflow/{agency}/{dataflow_id}/{version}"
@@ -29,6 +32,15 @@ class IstatAILoader:
                 verify=certifi.where(),
             )
             response.raise_for_status()
+
+            # ELT — Load: salvataggio del dato grezzo prima di qualsiasi trasformazione
+            output_dir = Path("downloaded_data")
+            output_dir.mkdir(exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            raw_file = output_dir / f"raw_{self.dataflow_id}_{timestamp}.xml"
+            raw_file.write_bytes(response.content)
+            print(f"[ISTAT] Dato grezzo salvato in: {raw_file}")
+
             root = ET.fromstring(response.content)
         except Exception as exc:
             raise RuntimeError(f"Errore durante l'interrogazione dell'API ISTAT: {exc}")
@@ -38,8 +50,11 @@ class IstatAILoader:
             "common": "http://www.sdmx.org/resources/sdmxml/schemas/v2_1/common",
         }
         dataflows = root.findall(".//structure:Dataflow", namespaces)
+       
         if not dataflows:
             raise RuntimeError("La risposta ISTAT non contiene dataflow SDMX.")
+
+        print(f"[ISTAT] Righe (dataflow): {len(dataflows)}, Colonne (attributi): {len(dataflows[0].attrib)}")
 
         narrative_data = []
         for dataflow in dataflows:
@@ -70,7 +85,7 @@ class IstatAILoader:
 def interroga_claude(contesto_dati: str, quesito: str):
     """Invia il contesto ISTAT decodificato direttamente alle API di Claude."""
     client = Anthropic()
-    modello = "claude-3-5-sonnet-latest"
+    modello = "claude-haiku-4-5-20251001"
 
     print(f"[Claude] Invio di {len(contesto_dati.splitlines())} record statistici a {modello}...")
 
@@ -100,16 +115,17 @@ if __name__ == "__main__":
         print("Dati caricati")
         print(dati_istat_reali)
 
-        # domanda_utente = (
-        #     "Descrivi il dataflow ISTAT caricato e indica quali metadati sono disponibili."
-        # )
-        #
-        # print(f"\n[Utente]: {domanda_utente}\n")
-        #
-        # risposta_ai = interroga_claude(contesto_dati=dati_istat_reali, quesito=domanda_utente)
-        #
-        # print("\n--- RISPOSTA DELL'ANALISTA ECONOMICO (Dati ISTAT Reali) ---")
-        # print(risposta_ai)
+        domanda_utente = (
+            #"Descrivi il dataflow ISTAT caricato e indica quali metadati sono disponibili."
+              "quali anni sono presenti nel dataset e uali sono i criteri geografici."
+        )
+        
+        print(f"\n[Utente]: {domanda_utente}\n")
+        
+        risposta_ai = interroga_claude(contesto_dati=dati_istat_reali, quesito=domanda_utente)
+        
+        print("\n--- RISPOSTA DELL'ANALISTA ECONOMICO (Dati ISTAT Reali) ---")
+        print(risposta_ai)
 
     except Exception as error:
         print(f"\n[Errore di esecuzione]: {error}")
