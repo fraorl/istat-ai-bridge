@@ -3,11 +3,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from pydantic import BaseModel
+from anthropic import RateLimitError
 
 load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from core.claude_client import ask_dataset_filter
-from core.istat_loader import load_datasets
+from core.istat_loader import load_category_scheme, load_datasets
 
 app = FastAPI(title="ISTAT AI Bridge API")
 
@@ -17,6 +18,16 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
+
+
+@app.get("/api/categories")
+def get_categories():
+    try:
+        categories = load_category_scheme()
+        # espone solo le categorie di primo livello (parent_id == None)
+        return [c for c in categories if c["parent_id"] is None]
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
 
 
 @app.get("/api/datasets")
@@ -37,4 +48,10 @@ def chat(req: ChatRequest):
         datasets = load_datasets()
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Errore caricamento dataset: {exc}")
-    return ask_dataset_filter(datasets, req.message)
+    try:
+        return ask_dataset_filter(datasets, req.message)
+    except RateLimitError:
+        raise HTTPException(
+            status_code=429,
+            detail="Limite di richieste API Claude superato. Attendi qualche secondo e riprova."
+        )

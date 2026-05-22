@@ -27,6 +27,11 @@ export default function Chat({ onFilter, onReset }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: text }),
       })
+      if (res.status === 429) {
+        const err = await res.json()
+        setMessages(prev => [...prev, { role: 'assistant', text: err.detail, rateLimit: true }])
+        return
+      }
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
 
@@ -60,7 +65,7 @@ export default function Chat({ onFilter, onReset }) {
 
       <div className="chat-messages">
         {messages.map((m, i) => (
-          <div key={i} className={`bubble ${m.role}${m.error ? ' error' : ''}`}>
+          <div key={i} className={`bubble ${m.role}${m.error ? ' error' : ''}${m.rateLimit ? ' rate-limit' : ''}`}>
             {m.text}
           </div>
         ))}

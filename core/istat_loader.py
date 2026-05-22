@@ -68,11 +68,95 @@ def parse_catalog(xml_bytes: bytes) -> list[dict]:
     return datasets
 
 
+def fetch_category_scheme(agency: str = "IT1") -> bytes:
+    url = f"{SDMX_BASE}/categoryscheme/{agency}"
+    print(f"[ISTAT] Scarico category scheme da: {url}")
+    content = _get(url, "application/vnd.sdmx.structure+xml;version=2.1", timeout=60)
+    save_raw(content, timestamped_name(f"categoryscheme_{agency}"))
+    return content
+
+
+def _parse_categories_recursive(element, parent_id: str | None, scheme_id: str, result: list):
+    for cat in element.findall("structure:Category", NAMESPACES_STRUCTURE):
+        cat_id = cat.attrib.get("id")
+        name_it = cat.findtext(
+            "common:Name[@{http://www.w3.org/XML/1998/namespace}lang='it']",
+            namespaces=NAMESPACES_STRUCTURE,
+        )
+        name_en = cat.findtext(
+            "common:Name[@{http://www.w3.org/XML/1998/namespace}lang='en']",
+            namespaces=NAMESPACES_STRUCTURE,
+        )
+        result.append({
+            "id": cat_id,
+            "scheme_id": scheme_id,
+            "parent_id": parent_id,
+            "name_it": name_it or name_en or cat_id,
+            "name_en": name_en or name_it or cat_id,
+        })
+        _parse_categories_recursive(cat, cat_id, scheme_id, result)
+
+
+def parse_category_scheme(xml_bytes: bytes) -> list[dict]:
+    root = ET.fromstring(xml_bytes)
+    result = []
+    for scheme in root.findall(".//structure:CategoryScheme", NAMESPACES_STRUCTURE):
+        _parse_categories_recursive(scheme, None, scheme.attrib.get("id", ""), result)
+    return result
+
+
+def fetch_categorisations(agency: str = "IT1") -> bytes:
+    url = f"{SDMX_BASE}/categorisation/{agency}"
+    print(f"[ISTAT] Scarico categorisations da: {url}")
+    content = _get(url, "application/vnd.sdmx.structure+xml;version=2.1", timeout=60)
+    save_raw(content, timestamped_name(f"categorisation_{agency}"))
+    return content
+
+
+def parse_categorisations(xml_bytes: bytes) -> dict[str, str]:
+    """Ritorna {dataflow_id: category_id} usando la prima categorizzazione trovata."""
+    root = ET.fromstring(xml_bytes)
+    mapping: dict[str, str] = {}
+    for item in root.findall(".//structure:Categorisation", NAMESPACES_STRUCTURE):
+        source = item.find("structure:Source", NAMESPACES_STRUCTURE)
+        target = item.find("structure:Target", NAMESPACES_STRUCTURE)
+        if source is None or target is None:
+            continue
+        src_ref = source.find("Ref")
+        tgt_ref = target.find("Ref")
+        if src_ref is None or tgt_ref is None:
+            continue
+        dataflow_id = src_ref.attrib.get("id")
+        category_id = tgt_ref.attrib.get("id")
+        if dataflow_id and category_id and dataflow_id not in mapping:
+            mapping[dataflow_id] = category_id
+    return mapping
+
+
+def load_category_scheme(agency: str = "IT1") -> list[dict]:
+    cached = latest_file(f"categoryscheme_{agency}_*.xml")
+    if cached:
+        return parse_category_scheme(cached.read_bytes())
+    return parse_category_scheme(fetch_category_scheme(agency))
+
+
+def load_categorisations(agency: str = "IT1") -> dict[str, str]:
+    cached = latest_file(f"categorisation_{agency}_*.xml")
+    if cached:
+        return parse_categorisations(cached.read_bytes())
+    return parse_categorisations(fetch_categorisations(agency))
+
+
 def load_datasets(agency: str = "IT1") -> list[dict]:
     cached = latest_file(f"catalog_{agency}_*.xml")
-    if cached:
-        return parse_catalog(cached.read_bytes())
-    return parse_catalog(fetch_catalog(agency))
+    raw = cached.read_bytes() if cached else fetch_catalog(agency)
+    datasets = parse_catalog(raw)
+
+    categorisations = load_categorisations(agency)
+    for d in datasets:
+        d["category_id"] = categorisations.get(d["id"])
+
+    return datasets
 
 
 class IstatAILoader:

@@ -74,6 +74,12 @@
   color: #c53030;
 }
 
+.bubble.rate-limit {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
 .bubble.loading {
   display: flex;
   gap: 4px;
